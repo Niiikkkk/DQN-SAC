@@ -3,6 +3,14 @@ import time
 import yaml
 import argparse
 
+import sys
+import os
+# Add the repository's src directory to sys.path
+this_file = os.path.abspath(__file__)
+src_dir = os.path.abspath(os.path.join(os.path.dirname(this_file), ".."))
+if src_dir not in sys.path:
+    sys.path.insert(0, src_dir)
+
 from agents.sac_agent import SoftActorCritic
 from configs import sac_config
 from infrastructure.replay_buffer import ReplayBuffer

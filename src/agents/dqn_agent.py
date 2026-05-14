@@ -48,7 +48,8 @@ class DQNAgent(nn.Module):
         observation = ptu.from_numpy(np.asarray(observation))[None]
 
         # TODO(Section 2.4): get the action from the critic using an epsilon-greedy strategy
-        action = None
+        actions = self.critic(observation)
+        action = torch.argmax(actions,dim=-1) if np.random.rand() < 1-epsilon else torch.randint(0, self.num_actions, ())
         # ENDTODO
 
         return ptu.to_numpy(action).squeeze(0).item()
@@ -67,25 +68,43 @@ class DQNAgent(nn.Module):
         # Compute target values
         with torch.no_grad():
             # TODO(Section 2.4): compute target values
-            next_qa_values = None
-
+            #All actions from the next state
+            next_qa_values = self.target_critic(next_obs)
             if self.use_double_q:
                 # TODO(Section 2.5): implement double-Q target action selection
-                next_action = None
+                # In double Q we use a network to get the action and another one to compute the QA.
+                
+                # We pick the action with critic (which is the one we update each iteration),
+                #then below we take the q based on next_qa_values, which is calculated from
+                #target_criti which is the one that is updated only N steps.
+                next_action = torch.argmax(self.critic(next_obs),dim=-1)
             else:
-                next_action = None
+                #without double Q we use target_critic to get the QA values, and then we take the max action from those QA
 
-            next_q_values = None
+                #max will return two arrays. First is the max values, second in the index of the max value
+                # This is equals to do torch.argmax(next_qa_values, dim = -1)
+                next_action = torch.max(next_qa_values,dim=-1)[1]
+
+            #gather will pick the values in next_qa_values that correspond to next_action index
+            # IN case where use_double_q = False this is equals to torch.max(next_qa_values,dim=-1)[0]
+            # but in case of double_q the max woulnd't be good, since the network for computing the next_action is different! So use gather
+
+
+            #So next_qa_values have a value for each action
+            # next_q_values has only the q value for that specific action (the best)
+            next_q_values = next_qa_values.gather(dim=1, index=next_action.unsqueeze(1)).squeeze(1)
             assert next_q_values.shape == (batch_size,), next_q_values.shape
 
-            target_values = None
+            target_values = reward + self.discount*(1-done.float())*next_q_values
             assert target_values.shape == (batch_size,), target_values.shape
             # ENDTODO
 
         # TODO(Section 2.4): train the critic with the target values
-        qa_values = None
-        q_values = None
-        loss = None
+        #self.critic outputs [batch_size, actions], so those are qa values, then with gather we take the values corresponding to the actions took
+        # exactly as we have done for the next_q_values
+        qa_values = self.critic(obs)
+        q_values = qa_values.gather(dim=1, index=action.unsqueeze(1)).squeeze(1)
+        loss = self.critic_loss(q_values, target_values)
         # ENDTODO
 
         self.critic_optimizer.zero_grad()
@@ -120,7 +139,9 @@ class DQNAgent(nn.Module):
         Update the DQN agent, including both the critic and target.
         """
         # TODO(Section 2.4): update the critic, and the target if needed
-        critic_stats = None
+        critic_stats = self.update_critic(obs, action, reward, next_obs, done)
+        if step % self.target_update_period == 0:
+            self.update_target_critic()
         # Hint: if step % self.target_update_period == 0: ...
         # ENDTODO
 
